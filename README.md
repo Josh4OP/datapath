@@ -44,9 +44,9 @@ Las extensiones opcionales se encuentran desactivadas inicialmente y requieren h
 
 No es necesario instalar Python, Node.js, compiladores ni dependencias adicionales para utilizar la aplicación localmente.
 
-## Instalación y ejecución
+## Ejecución
 
-
+[text](https://candid-marzipan-c59178.netlify.app)
 
 ## Cómo utilizar el simulador
 
