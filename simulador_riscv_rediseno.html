@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Simulador de datapath RISC-V</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ---------- Tokens: papel de plano (claro) y mesa de laboratorio (oscuro) ---------- */
+:root{--bg:#e3e8ef;--panel:#f7f9fc;--panel2:#edf1f7;--ink:#0d1b2e;--mut:#52607a;--line:#c5cedb;--line2:#d9e0ea;
+ --wire:#8a97ad;--act:#0a7f9f;--actx:#06637d;--act-ink:#ffffff;--cur:#c2630a;--curx:#954b00;--cf:#ffffff;--cs:#5a6985;--cab:#d6eef6;--ccur:#fde8cc;
+ --ok:#0e7a52;--er:#b3261e;--wn:#8a5a00;--vbg:#fbfcfe;--grid:#e3e9f1;--shadow:0 1px 0 rgba(13,27,46,.05),0 10px 24px -14px rgba(13,27,46,.35);
+ --sans:"Barlow Semi Condensed",ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;--mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;color-scheme:light}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#080f1b;--panel:#101a2c;--panel2:#15223a;--ink:#d9e5f7;--mut:#8b9bb6;--line:#23324f;--line2:#1a2740;
+ --wire:#3b4a68;--act:#38c6ea;--actx:#5fd4f0;--act-ink:#04141b;--cur:#ffb04a;--curx:#ffb04a;--cf:#131f37;--cs:#6a7da3;--cab:#0f3a4c;--ccur:#3a2a10;
+ --ok:#46d79a;--er:#ff7b72;--wn:#f0c05a;--vbg:#0c1424;--grid:#13203a;--shadow:0 1px 0 rgba(255,255,255,.03),0 14px 30px -16px rgba(0,0,0,.8);color-scheme:dark}}
+:root[data-theme=dark]{--bg:#080f1b;--panel:#101a2c;--panel2:#15223a;--ink:#d9e5f7;--mut:#8b9bb6;--line:#23324f;--line2:#1a2740;
+ --wire:#3b4a68;--act:#38c6ea;--actx:#5fd4f0;--act-ink:#04141b;--cur:#ffb04a;--curx:#ffb04a;--cf:#131f37;--cs:#6a7da3;--cab:#0f3a4c;--ccur:#3a2a10;
+ --ok:#46d79a;--er:#ff7b72;--wn:#f0c05a;--vbg:#0c1424;--grid:#13203a;--shadow:0 1px 0 rgba(255,255,255,.03),0 14px 30px -16px rgba(0,0,0,.8);color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px);-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 var(--sans);padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+.mono,textarea,code,pre,td.m,.m{font-family:var(--mono);font-variant-numeric:tabular-nums}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+[hidden]{display:none!important}
+
+/* ---------- Barra superior ---------- */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:10px 14px 8px}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1 1 320px}
+.brand h1{font-size:18px;font-weight:700;letter-spacing:.01em;margin:0;white-space:nowrap}
+.brand span{color:var(--mut);font-size:12.5px}
+.chip-st{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-weight:600;font-size:13px;max-width:100%}
+.chip-st i{width:9px;height:9px;border-radius:50%;background:var(--mut);flex:none}
+body[data-st=run] .chip-st{border-color:var(--act);color:var(--actx)}body[data-st=run] .chip-st i{background:var(--act);animation:pulse 1.1s ease-in-out infinite}
+body[data-st=pause] .chip-st{border-color:var(--cur);color:var(--curx)}body[data-st=pause] .chip-st i{background:var(--cur)}
+body[data-st=done] .chip-st{border-color:var(--ok);color:var(--ok)}body[data-st=done] .chip-st i{background:var(--ok)}
+body[data-st=err] .chip-st{border-color:var(--er);color:var(--er)}body[data-st=err] .chip-st i{background:var(--er)}
+@keyframes pulse{50%{opacity:.35;transform:scale(.75)}}
+
+/* ---------- Controles tipo depurador ---------- */
+.dbg{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:0 14px 10px}
+.grp{display:inline-flex;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+.grp .b{border:0;border-radius:0;border-right:1px solid var(--line)}.grp .b:last-child{border-right:0}
+.b{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer;white-space:nowrap;font-weight:500;transition:background .12s,border-color .12s,color .12s}
+.b svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.b:hover:not(:disabled){background:var(--panel2);border-color:var(--act)}
+.b:active:not(:disabled){background:var(--cab)}
+.b:disabled{opacity:.4;cursor:not-allowed}
+.b.pri{background:var(--act);border-color:var(--act);color:var(--act-ink);font-weight:700}
+.b.pri:hover:not(:disabled){background:var(--act);filter:brightness(1.08)}
+.b[aria-pressed=true]{background:var(--cab);border-color:var(--act);color:var(--actx);box-shadow:inset 0 0 0 1px var(--act)}
+.b.pri[aria-pressed=true]{background:var(--cab);color:var(--actx)}
+.b.hot{border-color:var(--cur);color:var(--curx);background:var(--ccur);box-shadow:inset 0 0 0 1px var(--cur)}
+.b.sm{height:28px;padding:0 9px;font-size:13px}
+.sep{width:1px;align-self:stretch;background:var(--line);margin:2px 0}
+.fld{display:inline-flex;align-items:center;gap:8px;color:var(--mut);font-size:13px}
+.fld output{min-width:3.4em;color:var(--ink);font-family:var(--mono);font-size:12px}
+input[type=range]{accent-color:var(--act);width:110px;height:24px;margin:0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:transparent;padding:0 11px;height:32px;cursor:pointer;color:var(--mut);font-weight:500}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:var(--cab);color:var(--actx);font-weight:600}
+.seg button:hover:not([aria-pressed=true]){background:var(--panel2)}
+.sw{display:inline-flex;align-items:center;gap:8px;cursor:pointer;color:var(--ink);font-size:13px}
+.sw input{position:absolute;opacity:0;width:1px;height:1px}
+.sw .tk{width:30px;height:18px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);position:relative;transition:background .15s;flex:none}
+.sw .tk::after{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--mut);transition:transform .15s,background .15s}
+.sw input:checked+.tk{background:var(--cab);border-color:var(--act)}.sw input:checked+.tk::after{transform:translateX(12px);background:var(--act)}
+.sw input:focus-visible+.tk{outline:2px solid var(--act);outline-offset:2px}
+.push{margin-left:auto}
+
+/* ---------- Rejilla principal ---------- */
+.app{display:grid;grid-template-columns:minmax(290px,320px) minmax(0,1fr) minmax(310px,350px);gap:12px;padding:0 14px 14px;align-items:start}
+.col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.card>h2,.hd{display:flex;align-items:center;gap:8px;margin:0;padding:0 10px;min-height:34px;border-bottom:1px solid var(--line);background:var(--panel2);font-size:13px;font-weight:600;color:var(--ink);flex:none}
+.hd .push{display:inline-flex;align-items:center;gap:6px}
+.sub{color:var(--mut);font-weight:400;white-space:nowrap}
+.card>h2{white-space:nowrap}
+.card>h2.wr{flex-wrap:wrap;white-space:normal;padding:4px 10px;row-gap:4px}.card>h2.wr .push{margin-left:auto}
+.scroll{overflow:auto;min-height:0}
+@media(min-width:1180px) and (min-height:680px){
+ html,body{height:100%}body{display:flex;flex-direction:column;overflow:hidden}
+ .app{flex:1;min-height:0;align-items:stretch}.col{min-height:0}
+ .c-left>.card:first-child{flex:1 1 auto;min-height:0}.c-left>.card.tabs{flex:0 0 34%;min-height:150px}.ed{flex:1;height:auto;min-height:150px}
+ .c-mid{overflow:auto}.c-mid>.card{flex:1 0 auto}.dpv{flex:1 1 auto;min-height:300px}
+ .c-right{overflow:auto}.c-right>.card{flex:none}.sc{max-height:230px}}
+@media(min-width:1180px) and (min-height:680px) and (max-height:859px){#stage{max-height:96px}.leg .note{display:none}}
+@media(min-width:1180px) and (min-height:860px){.c-right{overflow:hidden}.c-right>.card.fx{flex:1 1 0;min-height:140px}.sc{max-height:none}}
+@media(max-width:1179px){.app{grid-template-columns:minmax(0,1fr)}.c-mid{order:1}.c-left{order:2}.c-right{order:3}}
+@media(min-width:760px) and (max-width:1179px){.app{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.c-mid{grid-column:1/-1}}
+body.fx .c-left,body.fx .c-right{display:none}body.fx .app{grid-template-columns:minmax(0,1fr)}
+
+/* ---------- Editor ---------- */
+.ed{position:relative;height:272px;font:13px/20px var(--mono);background:var(--vbg);flex:none}
+.gut,.hl{position:absolute;top:0;bottom:0;overflow:hidden;padding:8px 0;white-space:pre}
+.gut{left:0;width:50px;text-align:right;color:var(--mut);border-right:1px solid var(--line);background:var(--panel2);font-size:12px}
+.gut div{padding-right:8px;position:relative;height:20px}.gut b{position:absolute;left:7px;font-weight:700;font-size:11px}
+.gut .el b,.gut .el{color:var(--er)}.gut .wl b{color:var(--wn)}.gut .cl b{color:var(--curx)}.gut .cl{color:var(--ink);font-weight:700}
+.hl{left:50px;right:0;padding-left:0;color:transparent;pointer-events:none}.hl div{height:20px;padding-left:8px;white-space:pre}
+.hl .cl{background:color-mix(in srgb,var(--cur) 24%,transparent);box-shadow:inset 3px 0 0 var(--cur)}
+.hl .el{background:color-mix(in srgb,var(--er) 16%,transparent)}.hl .wl{background:color-mix(in srgb,var(--wn) 16%,transparent)}
+.hl u{text-decoration-line:underline;text-decoration-style:wavy;text-decoration-thickness:1.5px;text-underline-offset:3px}.hl u.ue{text-decoration-color:var(--er)}.hl u.uw{text-decoration-color:var(--wn)}
+.ed textarea{position:absolute;left:50px;right:0;top:0;bottom:0;border:0;background:transparent;color:var(--ink);resize:none;padding:8px 8px;font:inherit;white-space:pre;overflow:auto;line-height:20px;tab-size:4;caret-color:var(--act)}
+.ed textarea:focus-visible{outline:0;box-shadow:inset 0 0 0 2px var(--act)}
+#pop{position:absolute;left:58px;right:10px;z-index:3;pointer-events:none;background:var(--panel);border:1px solid var(--er);border-left-width:4px;border-radius:6px;padding:7px 10px;font:12.5px/1.35 var(--sans);box-shadow:var(--shadow);color:var(--ink)}
+#pop.w{border-color:var(--wn)}#pop b{font-weight:700}#pop .tp{color:var(--actx)}
+.ex{display:flex;gap:8px;padding:7px 8px;border-top:1px solid var(--line);align-items:center;flex:none}
+.ex select{height:28px;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:0 6px;flex:1 1 90px;min-width:0}.ex .b{flex:none}
+
+/* ---------- Pestañas, consola, historial ---------- */
+.tabs{overflow:hidden}.tl{display:flex;border-bottom:1px solid var(--line);background:var(--panel2);flex:none}
+.tl button{border:0;background:transparent;padding:0 14px;height:34px;cursor:pointer;color:var(--mut);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;display:inline-flex;gap:7px;align-items:center}
+.tl button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--act);background:var(--panel)}
+.tl button:hover:not([aria-selected=true]){background:var(--line2)}
+.bdg{min-width:19px;height:19px;border-radius:999px;background:var(--er);color:#fff;font:700 11px/19px var(--mono);text-align:center;padding:0 5px}.bdg.w{background:var(--wn);color:#fff}
+.tp-body{overflow:auto;min-height:0;flex:1;padding:8px;max-height:320px}
+@media(min-width:1180px) and (min-height:680px){.tp-body{max-height:none}}
+.dg{border:1px solid var(--line);border-left:4px solid var(--er);border-radius:6px;padding:8px 10px;margin:0 0 8px;background:var(--vbg);font-size:13px}
+.dg.w{border-left-color:var(--wn)}.dg.o{border-left-color:var(--ok)}
+.dg .t1{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-weight:600}
+.dg .t1 .k{color:var(--er)}.dg.w .t1 .k{color:var(--wn)}
+.dg .lk{border:1px solid var(--line);background:var(--panel);border-radius:5px;font:600 12px var(--mono);padding:0 7px;height:22px;cursor:pointer}.dg .lk:hover{border-color:var(--act);color:var(--actx)}
+.dg pre{margin:6px 0;padding:6px 8px;background:var(--panel2);border-radius:4px;font-size:12px;white-space:pre-wrap;overflow:auto;border:0}
+.dg pre .cr{color:var(--er);font-weight:700}.dg.w pre .cr{color:var(--wn)}
+.dg dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px 10px}.dg dt{color:var(--mut)}.dg dd{margin:0}
+.dg .tip{color:var(--actx);font-weight:500}
+.tests{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0}
+.empty{color:var(--mut);padding:6px 2px}
+.hi{padding:6px 2px 7px;border-bottom:1px solid var(--line2);font-size:12.5px}.hi:last-child{border-bottom:0}
+.hi.last{background:color-mix(in srgb,var(--act) 10%,transparent);box-shadow:inset 3px 0 0 var(--act);padding-left:8px}
+.hi .n{color:var(--mut);font-family:var(--mono);font-size:11.5px}.hi .ins{font-family:var(--mono);font-weight:600}
+.hi .r{color:var(--ok);font-family:var(--mono);font-size:12px}.hi .dt{color:var(--mut);margin-top:2px;line-height:1.35}
+
+/* ---------- Datapath ---------- */
+.card.dpc{box-shadow:var(--shadow);border-color:color-mix(in srgb,var(--line) 60%,var(--act))}
+body[data-st=run] .card.dpc{border-color:var(--act)}body[data-st=pause] .card.dpc{border-color:var(--cur)}body[data-st=err] .card.dpc{border-color:var(--er)}
+.zc{display:inline-flex;align-items:center;gap:4px}
+.dpt{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
+#ph{display:flex;list-style:none;margin:0;padding:0;gap:0;flex:none}
+#ph li{display:flex;flex-direction:column;align-items:flex-start;min-width:64px;padding:3px 12px 3px 10px;border:1px solid var(--line);border-left-width:0;color:var(--mut);position:relative;background:var(--panel)}
+#ph li:first-child{border-left-width:1px;border-radius:7px 0 0 7px}#ph li:last-child{border-radius:0 7px 7px 0}
+#ph li b{font:700 13px var(--mono);color:inherit;letter-spacing:.02em}#ph li span{font-size:11px;line-height:1.1}
+#ph li.dn{color:var(--actx);background:color-mix(in srgb,var(--act) 12%,var(--panel))}
+#ph li.on{color:var(--curx);background:var(--ccur);border-color:var(--cur);z-index:1;box-shadow:0 0 0 1px var(--cur)}
+#ph li.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:3px;background:var(--cur)}
+#ir{flex:1 1 260px;min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:13px}
+#ir code{font-size:14px;font-weight:700;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 8px}
+#ir .k{color:var(--mut)}
+.dpv{position:relative;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#dpw{overflow:auto;min-height:0;max-height:78vh;flex:1;background-color:var(--vbg);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:24px 24px;background-attachment:local;cursor:grab;touch-action:pan-x pan-y;overscroll-behavior:contain}
+#dpw.pan{cursor:grabbing;user-select:none}
+@media(min-width:1180px) and (min-height:680px){#dpw{max-height:none}}
+#dp{display:block;width:100%;height:auto;margin:0 auto}
+.leg{display:flex;flex-wrap:wrap;gap:6px 14px;padding:6px 10px;border-top:1px solid var(--line);font-size:12px;color:var(--mut);align-items:center;flex:none}
+.leg span{display:inline-flex;align-items:center;gap:6px}
+.leg svg{width:26px;height:12px;flex:none}
+.leg .note{flex-basis:100%;font-size:11.5px;opacity:.9}
+#stage{padding:8px 12px 10px;border-top:1px solid var(--line);min-height:62px;font-size:13px;flex:none;max-height:190px;overflow:auto}
+#stage .cu{font-weight:500}#stage .cu b{color:var(--curx);font-family:var(--mono);margin-right:4px}
+#stage .pv{color:var(--mut);margin-top:4px}#stage .pv div{margin:1px 0}
+#stage .hint{color:var(--mut)}
+/* svg */
+.w{fill:none;stroke:var(--wire);stroke-width:2;stroke-linejoin:round;transition:stroke .2s,stroke-width .2s}
+.w.act{stroke:var(--act);stroke-width:3.2}
+.w.cur{stroke:var(--cur);stroke-width:3.8;stroke-dasharray:10 7;animation:fl .7s linear infinite}
+@keyframes fl{to{stroke-dashoffset:-17}}
+#dp.pz .cur{animation-play-state:paused}
+.c{fill:var(--cf);stroke:var(--cs);stroke-width:1.6;transition:fill .2s,stroke .2s}
+.c.act{fill:var(--cab);stroke:var(--act);stroke-width:2.2}
+.c.cur{fill:var(--ccur);stroke:var(--cur);stroke-width:3;filter:drop-shadow(0 0 5px color-mix(in srgb,var(--cur) 55%,transparent))}
+.c.inf{stroke-dasharray:5 3}
+#dp text{font-family:var(--sans);fill:var(--ink);font-size:11.5px;pointer-events:none;paint-order:stroke;stroke:var(--vbg);stroke-width:3.5px;stroke-linejoin:round}
+#dp .t{font-weight:600;font-size:13.5px}#dp .t.sm{font-size:11px}#dp .pt{font-size:11.5px;fill:var(--mut)}
+#dp .sg,#dp .vv{stroke:none;font-family:var(--mono)}
+#dp .sg{fill:var(--actx);font-weight:700;font-size:12px}#dp .vv{fill:var(--ink);font-weight:700;font-size:11.5px}
+#dp .chip{fill:var(--panel);stroke-width:1.2}#dp .chip.cs{stroke:var(--act)}#dp .chip.cv{stroke:var(--cur)}
+#dp.nv .vv,#dp.nv .chip.cv{display:none}
+@media(prefers-reduced-motion:reduce){.w.cur{animation:none}.w,.c,.b,.sw .tk,.sw .tk::after{transition:none}body[data-st=run] .chip-st i{animation:none}.rw.nw td,.rw.nw>*{animation:none!important}}
+
+/* ---------- Paneles técnicos ---------- */
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{text-align:left;color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--panel2);z-index:1}
+td,th{padding:3px 8px;border-bottom:1px solid var(--line2);vertical-align:top}
+#sig td{padding:2px 8px;vertical-align:middle}
+td.m,.m{font-size:12px}
+#sig td:first-child{font-family:var(--mono);font-size:12px;white-space:nowrap}
+#sig td.fn{width:100%;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vb{display:inline-block;min-width:34px;text-align:center;border-radius:5px;padding:0 6px;font:700 12px/18px var(--mono);border:1px solid var(--line);color:var(--mut)}
+.vb.v1{background:var(--act);border-color:var(--act);color:var(--act-ink)}.vb.vx{background:var(--panel2);color:var(--ink)}.vb.v0{background:transparent}.vb.na{border-style:dashed}
+#sig.nd td:nth-child(3),#sig.nd th:nth-child(3){display:none}#sig td.fn{color:var(--mut);font-size:12px}
+#chg{padding:6px 10px 7px;display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:12.5px;line-height:1.3}
+#chg dt{color:var(--mut);white-space:nowrap}#chg dd{margin:0;font-family:var(--mono);font-size:12px;min-width:0;overflow-wrap:anywhere}#chg dd.p{color:var(--mut);font-family:var(--sans)}
+#chg .a{color:var(--ok);font-weight:700}#chg .o{color:var(--mut)}
+.rt{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line2);flex-wrap:wrap;flex:none}.rt .cnt{color:var(--mut);font-size:12px;margin-left:auto}
+.card>h2 .seg button{height:24px;padding:0 8px;font-size:12.5px}
+.im summary{padding:6px 10px;cursor:pointer;color:var(--mut);font-size:12px;font-weight:600}.im[open] summary{border-bottom:1px solid var(--line2)}
+#reg td:first-child{white-space:nowrap}#reg td.rn{font-family:var(--mono);font-size:12px}#reg td.rn span{color:var(--mut);margin-left:6px}
+#reg td small,#mem td small{display:block;color:var(--mut);font-size:11px;font-family:var(--mono)}
+#reg td.tg,#mem td.tg{text-align:right;font-size:11px;color:var(--mut);white-space:nowrap;width:1%}
+#reg tr.r td{background:color-mix(in srgb,var(--act) 16%,transparent)}#reg tr.r td:first-child,#mem tr.r td:first-child{box-shadow:inset 3px 0 0 var(--act)}
+#reg tr.w td,#mem tr.w td{background:color-mix(in srgb,var(--ok) 20%,transparent)}#reg tr.w td:first-child,#mem tr.w td:first-child{box-shadow:inset 3px 0 0 var(--ok)}
+#reg tr.w td.tg,#mem tr.w td.tg{color:var(--ok);font-weight:700}#reg tr.r td.tg,#mem tr.r td.tg{color:var(--actx);font-weight:700}
+#reg tr.w td b,#mem tr.w td b{font-weight:700}
+#reg tr.w td,#mem tr.w td{animation:wr .9s ease-out}
+@keyframes wr{from{background:color-mix(in srgb,var(--ok) 55%,transparent)}}
+#reg tr.z td{color:var(--mut)}
+.mi{padding:6px 10px;border-bottom:1px solid var(--line2);font-size:12.5px}
+.mh{padding:6px 10px 2px;color:var(--mut);font-size:12px;font-weight:600}
+#mem tr.cur td{background:color-mix(in srgb,var(--cur) 18%,transparent)}#mem tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--cur)}
+@media(min-width:1180px) and (min-height:860px){.c-right .scroll{flex:1}}
+.sc{max-height:340px}
+
+/* ---------- Pantallas pequeñas ---------- */
+@media(max-width:900px){.b .lb{display:none}.b{padding:0 10px}.brand span{display:none}.dbg{gap:8px}}
+@media(max-width:760px){#dp{min-width:720px}}
+@media(max-width:560px){.top{padding:8px 10px 6px}.dbg{padding:0 10px 8px}.app{padding:0 10px 12px;gap:10px}.col{gap:10px}.brand h1{font-size:16px;white-space:normal}
+ #ph li{min-width:0;flex:1;padding:3px 6px}#ph{width:100%}.dpt{gap:8px}input[type=range]{width:90px}.ed{height:240px}}
+</style></head><body data-st="idle">
+<header class="top">
+<div class="brand"><h1>Datapath monociclo RISC-V</h1><span>RV64I · Patterson &amp; Hennessy · banco de pruebas</span></div>
+<div class="chip-st" id="st" role="status" aria-live="polite"><i></i><span id="stTxt">Listo</span></div>
+<button class="b sm" id="bTheme" type="button" aria-label="Cambiar tema claro u oscuro" title="Cambiar tema claro u oscuro"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><span class="lb">Tema</span></button>
+</header>
+<div class="dbg" role="toolbar" aria-label="Controles de ejecución">
+<div class="grp" role="group" aria-label="Ejecución">
+<button class="b pri" id="bRun" type="button" title="Ejecutar el programa con animación" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></svg><span class="lb">Ejecutar</span></button>
+<button class="b" id="bPause" type="button" title="Pausar la animación sin perder el progreso"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg><span class="lb">Pausar</span></button>
+<button class="b" id="bResume" type="button" title="Reanudar desde donde se detuvo"><svg viewBox="0 0 24 24"><path d="M6 4v16M10 12l9-7v14z"/></svg><span class="lb">Reanudar</span></button>
+</div>
+<div class="grp" role="group" aria-label="Avance manual">
+<button class="b" id="bPrev" type="button" title="Retroceder una etapa"><svg viewBox="0 0 24 24"><path d="M19 5v14L8 12zM5 5v14"/></svg><span class="lb">Paso anterior</span></button>
+<button class="b" id="bNext" type="button" title="Avanzar una etapa"><svg viewBox="0 0 24 24"><path d="M5 5v14l11-7zM19 5v14"/></svg><span class="lb">Paso siguiente</span></button>
+<button class="b" id="bInstr" type="button" title="Completar la instrucción actual"><svg viewBox="0 0 24 24"><path d="M4 5v14l7-7zM12 5v14l7-7z"/></svg><span class="lb">Siguiente instrucción</span></button>
+</div>
+<div class="grp" role="group" aria-label="Estado">
+<button class="b" id="bStop" type="button" title="Detener la animación (conserva el estado)"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg><span class="lb">Detener</span></button>
+<button class="b" id="bReset" type="button" title="Volver al estado inicial"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v5h5"/></svg><span class="lb">Reiniciar</span></button>
+<button class="b" id="bFast" type="button" title="Ejecutar todo el programa de inmediato"><svg viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="lb">Ejecución rápida</span></button>
+</div>
+<label class="fld">Velocidad <input type="range" id="sp" min="1" max="10" value="4" aria-describedby="spv"><output id="spv" for="sp">0.5 s</output></label>
+<div class="seg" role="group" aria-label="Nivel de detalle"><button type="button" id="lvD" aria-pressed="true">Detallado</button><button type="button" id="lvV" aria-pressed="false">Visual</button></div><input type="hidden" id="lv" value="d">
+<label class="sw push" title="Añade desplazador, acceso por palabra y bne/blt/bge: hardware inferido, no dibujado en la imagen de referencia"><input type="checkbox" id="ext"><span class="tk"></span><span>Extensiones opcionales (hardware inferido)</span></label>
+<button class="b" id="bTest" type="button" title="Ejecutar las pruebas automáticas del motor"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3"/></svg><span class="lb">Ejecutar pruebas</span></button>
+</div>
+<main class="app">
+<div class="col c-left">
+<section class="card" aria-label="Editor"><h2>Programa <span class="sub">· subconjunto RV64I</span></h2>
+<div class="ed" id="ed"><div class="gut" id="gut" aria-hidden="true"></div><div class="hl" id="hl" aria-hidden="true"></div><textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Programa ensamblador"></textarea><div id="pop" hidden role="status"></div></div>
+<div class="ex"><select id="ex" aria-label="Cargar ejemplo"><option value="">Cargar ejemplo…</option><option value="a">Aritmética y lógica</option><option value="m">Memoria ld/sd</option><option value="l">Bucle con beq</option><option value="e">Programa con errores</option></select><button class="b sm" id="bRestore" type="button">Restablecer</button><button class="b sm" id="bClear" type="button">Limpiar</button></div></section>
+<section class="card tabs" aria-label="Consola e historial">
+<div class="tl" role="tablist"><button type="button" role="tab" id="tCon" aria-selected="true" aria-controls="con">Errores y avisos <span class="bdg" id="nCon" hidden>0</span></button><button type="button" role="tab" id="tHis" aria-selected="false" aria-controls="tr">Historial <span class="bdg w" id="nHis" hidden style="background:var(--mut)">0</span></button></div>
+<div class="tp-body" id="con" role="tabpanel" aria-labelledby="tCon"></div>
+<div class="tp-body" id="tr" role="tabpanel" aria-labelledby="tHis" hidden></div></section>
+</div>
+<div class="col c-mid">
+<section class="card dpc" aria-label="Datapath"><h2 class="wr">Datapath conceptual <span class="sub">· * = inferido</span>
+<span class="push zc" role="group" aria-label="Zoom del datapath"><button class="b sm" id="zOut" type="button" aria-label="Alejar" title="Alejar">−</button><input type="range" id="zm" min="60" max="220" value="100" aria-label="Zoom"><button class="b sm" id="zIn" type="button" aria-label="Acercar" title="Acercar">+</button><output id="zv" class="m" for="zm" style="min-width:3.2em;text-align:right">100%</output><button class="b sm" id="zFit" type="button" title="Ajustar al ancho">Ajustar</button><button class="b sm" id="bFocus" type="button" aria-pressed="false" title="Ocultar los paneles laterales para ampliar el datapath">Ampliar</button></span></h2>
+<div class="dpt"><ol id="ph" aria-label="Etapas de la instrucción"><li><b>IF</b><span>Búsqueda</span></li><li><b>ID</b><span>Decodificación</span></li><li><b>EX</b><span>Ejecución</span></li><li><b>MEM</b><span>Memoria</span></li><li><b>WB</b><span>Escritura</span></li></ol><div id="ir" aria-live="off"></div></div>
+<div class="dpv"><div id="dpw" tabindex="0" role="group" aria-label="Datapath: arrastra para desplazar, Ctrl con la rueda para ampliar"></div></div>
+<div class="leg" aria-label="Leyenda" title="El dibujo es conceptual, no una reconstrucción exacta del datapath de la tarjeta de referencia. Subconjunto implementado: operaciones enteras seleccionadas, ld/sd, lw/sw opcionales y ramas seleccionadas."><span><svg viewBox="0 0 26 12"><path d="M1 6H25" stroke="var(--cur)" stroke-width="3.5" stroke-dasharray="6 4" fill="none"/></svg>dato de la etapa actual</span><span><svg viewBox="0 0 26 12"><path d="M1 6H25" stroke="var(--act)" stroke-width="3.2" fill="none"/></svg>ruta ya usada</span><span><svg viewBox="0 0 26 12"><path d="M1 6H25" stroke="var(--wire)" stroke-width="2" fill="none"/></svg>inactiva</span><span><svg viewBox="0 0 26 12"><rect x="2" y="1.5" width="22" height="9" rx="2" fill="var(--cab)" stroke="var(--act)" stroke-width="2"/></svg>componente activo</span><span><svg viewBox="0 0 26 12"><rect x="2" y="1.5" width="22" height="9" rx="2" fill="var(--ccur)" stroke="var(--cur)" stroke-width="2.4"/></svg>en esta etapa</span><span><svg viewBox="0 0 26 12"><rect x="2" y="1.5" width="22" height="9" rx="2" fill="var(--cf)" stroke="var(--cs)" stroke-width="1.6" stroke-dasharray="4 2.5"/></svg>inferido*</span><span><b class="m" style="color:var(--actx)">Señal=1</b> control</span><span><b class="m" style="border:1px solid var(--cur);border-radius:3px;padding:0 4px">0x…</b> valor en el bus</span>
+<span class="note">El dibujo es conceptual, no una reconstrucción exacta del datapath de la tarjeta de referencia. Subconjunto implementado: operaciones enteras seleccionadas, ld/sd, lw/sw opcionales y ramas seleccionadas.</span></div>
+<div id="stage"></div></section>
+</div>
+<div class="col c-right">
+<section class="card" aria-label="Señales de control"><h2>Señales de control</h2><div class="scroll"><table id="sig"></table></div></section>
+<section class="card" aria-label="Efecto de la instrucción"><h2>Esta instrucción <span class="sub">· antes → después</span></h2><dl id="chg" style="margin:0"></dl></section>
+<section class="card fx" aria-label="Registros"><h2 class="wr">Registros <span class="sub" id="rCnt"></span><span class="push" style="display:inline-flex;gap:10px;align-items:center"><span class="seg" role="group" aria-label="Formato de los valores"><button type="button" id="rfD" aria-pressed="true">Dec</button><button type="button" id="rfH" aria-pressed="false">Hex</button><button type="button" id="rfU" aria-pressed="false">Sin signo</button></span><label class="sw"><input type="checkbox" id="rAll"><span class="tk"></span><span>Los 32</span></label></span></h2>
+<div class="scroll sc"><table id="reg"></table></div></section>
+<section class="card fx" aria-label="Memoria"><h2>Memoria</h2><div class="scroll sc" id="mem"></div></section>
+</div></main>
+<script>
+/* ===================== MOTOR (independiente de la interfaz) ===================== */
+const B=BigInt,W=x=>BigInt.asIntN(64,x),U=x=>BigInt.asUintN(64,x),MEM=1024,LIM=5000;
+const ABI='zero ra sp gp tp t0 t1 t2 s0 s1 a0 a1 a2 a3 a4 a5 a6 a7 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 t3 t4 t5 t6'.split(' ');
+const REG={fp:8};ABI.forEach((n,i)=>{REG[n]=i;REG['x'+i]=i});
+const AL={add:(a,b)=>a+b,sub:(a,b)=>a-b,and:(a,b)=>a&b,or:(a,b)=>a|b,xor:(a,b)=>a^b,slt:(a,b)=>a<b?1n:0n,sll:(a,b)=>a<<(b&63n),srl:(a,b)=>U(a)>>(b&63n),sra:(a,b)=>a>>(b&63n)};
+const ALUC={and:'0000',or:'0001',add:'0010',sub:'0110',slt:'0111',xor:'0011*',sll:'1000*',srl:'1001*',sra:'1010*'};
+const OPS={};[['R','add sub and or xor slt'],['I','addi andi ori xori slti'],['L','ld'],['S','sd'],['B','beq'],['R','sll srl sra',1],['I','slli srli srai',1],['L','lw',1],['S','sw',1],['B','bne blt bge',1]]
+.forEach(([t,l,e])=>l.split(' ').forEach(m=>OPS[m]={t,e,a:t=='L'||t=='S'?'add':t=='B'?'sub':m.replace(/i$/,'')}));
+const UNS=/^(jalr?|lui|auipc|l[bh]u?|lwu|s[bh]|fence(\.i)?|ecall|ebreak|mul(h|hu|hsu)?|divu?|remu?|(add|sub|sll|srl|sra)w|(addi|slli|srli|srai)w|sltiu?|sltu|bltu|bgeu|csr\w+|amo\w+|lr\.w|sc\.w|nop|li|mv|j|jr|ret|la|neg|not|beqz|bnez|call|f(l|s)[wd]|f(add|sub|mul|div|sqrt|min|max|cvt|eq|lt|le|class|mv|sgn)[\w.]*)$/;
+const FMT={R:'rd, rs1, rs2',I:'rd, rs1, imm',L:'rd, imm(rs1)',S:'rs2, imm(rs1)',B:'rs1, rs2, etiqueta'};
+const NUM=/^[+-]?(0x[0-9a-f]+|\d+)$/i,toN=s=>s[0]=='-'?-Number(s.slice(1)):Number(s);
+function lev(a,b){const d=Array.from({length:a.length+1},(_,i)=>[i]);for(let j=1;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]!=b[j-1]));return d[a.length][b.length]}
+const near=(s,list)=>{let b=null,n=9;list.forEach(x=>{const d=lev(s,x);if(d<n){n=d;b=x}});return n<=2?b:null};
+function asm(src,ext){const L=src.split('\n'),prog=[],errs=[],lab={},pend=[];
+ const E=(l,c,n,k,m,tip)=>errs.push({l:l+1,c,n:Math.max(n,1),k,m,tip,s:L[l]});
+ L.forEach((raw,l)=>{let t=raw.replace(/(#|\/\/).*/,''),off=0,m;
+  while(m=t.match(/^\s*([A-Za-z_]\w*):/)){if(m[1] in lab)E(l,off+m[0].indexOf(m[1]),m[1].length,'Error semántico','Etiqueta duplicada.');else lab[m[1]]=prog.length;t=t.slice(m[0].length);off+=m[0].length}
+  m=t.match(/^(\s*)(\S+)([^]*)$/);if(!m)return;
+  const mc=off+m[1].length,mn=m[2].toLowerCase(),o=OPS[mn],rest=m[3],ro=mc+m[2].length;
+  if(!o){return UNS.test(mn)?E(l,mc,mn.length,'Instrucción no soportada','Existe en RISC-V, pero este datapath no la implementa (no hay camino PC+4→registros, ni PC→ALU, ni multiplicador, etc.).'):E(l,mc,mn.length,'Error de sintaxis (instrucción desconocida)','El mnemónico no existe.',near(mn,Object.keys(OPS))&&'¿quisiste escribir "'+near(mn,Object.keys(OPS))+'"?')}
+  if(o.e&&!ext)return E(l,mc,mn.length,'Instrucción no soportada','Existe en RISC-V, pero el datapath dibujado no la implementa (sin desplazador, sin acceso por palabra y solo con señal Zero).','Activa «Extensiones opcionales» para añadir ese hardware inferido.');
+  const parts=rest.trim()===''?[]:rest.split(','),cols=[];let q=ro;parts.forEach(p=>{cols.push(q+p.length-p.trimStart().length);q+=p.length+1});
+  const ps=parts.map(s=>s.trim()),need={R:3,I:3,L:2,S:2,B:3}[o.t];
+  if(ps.length!=need)return E(l,ro,rest.length,'Error de sintaxis','Cantidad incorrecta de operandos: '+mn+' requiere '+need+' y se encontraron '+ps.length+'.','Formato: '+mn+' '+FMT[o.t]);
+  if(ps.some(s=>!s))return E(l,ro,rest.length,'Error de sintaxis','Operando vacío (¿coma de más?).');
+  let bad=0;const e2=(k,m,tip)=>{bad=1;E(l,cols[k],ps[k].length,'Error semántico',m,tip)};
+  const rg=(k,s=ps[k])=>{const x=s.toLowerCase();if(x in REG)return REG[x];e2(k,NUM.test(s)?'Registro en posición incorrecta: se esperaba un registro y se encontró el número "'+s+'".':/^x\d+$/.test(x)?'Registro inexistente "'+s+'": el rango válido es x0–x31.':'Registro desconocido "'+s+'".');return 0};
+  const im=(k,lo,hi,s=ps[k])=>{if(s.toLowerCase() in REG){e2(k,'Se esperaba un inmediato y se encontró el registro "'+s+'".');return 0}
+   if(!NUM.test(s)){e2(k,'El inmediato "'+s+'" no es un número válido (decimal o 0x…).');return 0}
+   const v=toN(s);if(v<lo||v>hi){e2(k,'Inmediato fuera de rango: '+v+' no cabe en el campo ('+lo+'…'+hi+').');return 0}return v};
+  const mo=k=>{const x=ps[k].match(/^([^()]+)\(([^()]+)\)$/);if(!x){e2(k,'Formato incorrecto: se esperaba imm(reg), por ejemplo 8(x2).');return[0,0]}return[im(k,-2048,2047,x[1].trim()),rg(k,x[2].trim())]};
+  const I={l:l+1,mn,t:o.t,txt:t.trim()};let tok=null;
+  if(o.t=='R'){I.rd=rg(0);I.rs1=rg(1);I.rs2=rg(2)}
+  else if(o.t=='I'){I.rd=rg(0);I.rs1=rg(1);const sh=/^(slli|srli|srai)$/.test(mn);I.imm=im(2,sh?0:-2048,sh?63:2047)}
+  else if(o.t=='L'){I.rd=rg(0);[I.imm,I.rs1]=mo(1)}
+  else if(o.t=='S'){I.rs2=rg(0);[I.imm,I.rs1]=mo(1)}
+  else{I.rs1=rg(0);I.rs2=rg(1);if(NUM.test(ps[2])){I.imm=im(2,-4096,4094);if(I.imm%4){e2(2,'El desplazamiento del salto debe ser múltiplo de 4 porque este simulador no implementa instrucciones comprimidas (C).')}}else if(/^[A-Za-z_]\w*$/.test(ps[2]))tok=[ps[2],cols[2]];else e2(2,'Destino inválido: use una etiqueta o un número.')}
+  if(bad)return;prog.push(I);if(tok)pend.push({i:prog.length-1,tok:tok[0],c:tok[1],l});
+  if((o.t=='R'||o.t=='I'||o.t=='L')&&I.rd==0&&!(mn=='addi'&&I.rs1==0&&!I.imm))E(l,mc,mn.length,'Advertencia','El destino es x0: el resultado se descarta (x0 es siempre 0).');
+ });
+ pend.forEach(p=>{if(!(p.tok in lab))return E(p.l,p.c,p.tok.length,'Error semántico','Etiqueta inexistente: "'+p.tok+'".',near(p.tok,Object.keys(lab))&&'¿quisiste escribir "'+near(p.tok,Object.keys(lab))+'"?');
+  const off=(lab[p.tok]-p.i)*4;if(off<-4096||off>4092)return E(p.l,p.c,p.tok.length,'Error semántico','Destino fuera de rango del salto (±4 KiB).');if(off%4)return E(p.l,p.c,p.tok.length,'Error semántico','Destino desalineado para este datapath (se requiere múltiplo de 4).');prog[p.i].imm=off});
+ return{prog,errs,fatal:errs.some(e=>e.k!='Advertencia')}}
+const init=()=>({st:{r:Array(32).fill(0n),m:new Uint8Array(MEM),pc:0,n:0},info:null,ph:0});
+const hx=(v,n=16)=>'0x'+U(typeof v==='bigint'?v:BigInt(v)).toString(16).padStart(n,'0');
+function exec(st,i){const o=OPS[i.mn],t=o.t,r=st.r,pc=st.pc,a=r[i.rs1||0],r2=t=='R'||t=='S'||t=='B',b=r2?r[i.rs2]:0n,imm=B(i.imm||0),
+ bb=t=='R'||t=='B'?b:imm,res=W(AL[o.a](a,bb)),zero=res==0n,ld=t=='L',sd=t=='S',sz=/^[ls]d$/.test(i.mn)?8:4;let ma=null,mv=null,m=st.m;
+ if(ld||sd){const ua=U(res);ma=ua>BigInt(Number.MAX_SAFE_INTEGER)?MEM:Number(ua);const bad=ua>BigInt(MEM-sz)?'Acceso fuera de la memoria de datos (0–'+(MEM-1)+'): dirección '+hx(res)+'.':ma%sz?'Acceso desalineado: '+i.mn+' requiere dirección múltiplo de '+sz+' (calculada: '+ma+').':0;
+  if(bad)return{err:{l:i.l,c:0,n:0,k:'Error de ejecución',m:bad,s:i.txt}};
+  if(sd){m=m.slice();for(let k=0;k<sz;k++)m[ma+k]=Number((U(b)>>B(8*k))&255n);mv=BigInt.asIntN(8*sz,b)}
+  else{let v=0n;for(let k=0;k<sz;k++)v|=B(m[ma+k])<<B(8*k);mv=BigInt.asIntN(8*sz,v)}}
+ const mn=i.mn,taken=mn=='beq'?zero:mn=='bne'?!zero:mn=='blt'?a<b:mn=='bge'?a>=b:false,rw=t=='R'||t=='I'||ld,wb=ld?mv:res,nr=r.slice();
+ if(rw&&i.rd)nr[i.rd]=wb;const next=taken?pc+i.imm:pc+4,hasI=t!='R';
+ const reads=t=='R'||t=='S'||t=='B'?[i.rs1,i.rs2]:[i.rs1],X=n=>'x'+n;
+ const d=['IF: PC='+hx(pc,4)+' → memoria de instrucciones entrega «'+i.txt+'». Sumador PC+4 = '+hx(pc+4,4)+'.',
+  ''];
+ d[1]='ID: lee '+reads.map(n=>X(n)+'='+r[n]).join(', ')+(hasI?'; Imm Gen produce '+imm:'')+'. La unidad de control fija las señales.';
+ d[2]='EX: ALU('+o.a+') con A='+a+' y B='+bb+(t=='B'?' (rs2)':hasI?' (inmediato)':' (rs2)')+' → '+res+'; Zero='+ +zero+(t=='B'?'. Salto '+(taken?'TOMADO':'NO tomado')+': '+({beq:'rs1==rs2',bne:'rs1!=rs2',blt:'rs1<rs2',bge:'rs1>=rs2'})[mn]+(taken?' es cierto; destino '+hx(pc+i.imm,4):' es falso; PCSrc=0'):'.');
+ d[3]=ld?'MEM: lectura de '+sz+' B en '+hx(ma,4)+' → '+mv:sd?'MEM: escritura de '+sz+' B en '+hx(ma,4)+' ← '+mv:'MEM: sin acceso a memoria de datos.';
+ d[4]=(rw?(i.rd?'WB: '+X(i.rd)+' ← '+wb:'WB: x0 no se modifica (descartado)'):'WB: sin escritura en registros')+'. PC ← '+hx(next,4)+(taken?' (destino del salto)':' (PC+4)');
+ return{i,t,o,pc,a,b,imm,bb,res,zero,ma,mv,sz,taken,wb,rw,hasI,reads,r2,next,d,
+  ctl:{RegWrite:+rw,ALUSrc:+(t!='R'&&t!='B'),MemRead:+ld,MemWrite:+sd,MemtoReg:rw?+ld:'X',PCSrc:+taken,ALUop:ALUC[o.a]},after:{r:nr,m,pc:next,n:st.n+1}}}
+function step(c,P){if(c.err||c.done)return c;
+ if(!c.info||c.ph==4){const st=c.st,ix=st.pc/4;
+  if(st.n>=LIM)return{...c,err:{l:0,c:0,n:0,k:'Error de ejecución',m:'Límite de '+LIM+' instrucciones alcanzado (¿bucle infinito?).',s:''}};
+  if(st.pc%4||st.pc<0||ix>P.length)return{...c,err:{l:0,c:0,n:0,k:'Error de ejecución',m:'El PC ('+hx(st.pc,4)+') apunta fuera del programa.',s:''}};
+  if(ix==P.length)return{...c,done:true};
+  const info=exec(st,P[ix]);return info.err?{...c,err:info.err}:{st,info,ph:0}}
+ const ph=c.ph+1;if(ph==4){const s=c.info.after;return{st:s,info:c.info,ph,done:s.pc/4==P.length}}return{st:c.st,info:c.info,ph}}
+function paths(i){const t=i.t,c=i.ctl,p=[[],[],[],[],[]];
+ p[0]=['w_pc_im','w_pc_add4','w_add4','c_pc','c_im','c_add4'];
+ p[1]=['w_im_out','c_reg',...(i.reads.length>1?['w_rs2','w_rd2a']:[]),'w_rs1','w_rd1',...(c.RegWrite?['w_rd']:[]),...(i.hasI?['w_imm_in','c_imm']:[])];
+ p[2]=['c_alu','c_malu','w_mux_alu',...(c.ALUSrc?['w_imm_alu']:['w_rd2m']),...(t=='B'?['w_pc_addb','w_imm_sh','c_sh','w_sh_add','c_addb','w_zero','c_br']:[])];
+ p[3]=c.MemRead||c.MemWrite?['w_alu_dm','c_dm',...(c.MemWrite?['w_wdata']:[])]:[];
+ p[4]=['c_mpc','w_pc_loop','c_pc',i.taken?'w_sum':'w_add4',...(t=='B'?['w_pcsrc']:[]),...(c.RegWrite?['c_mwb','w_wb_reg',c.MemtoReg?'w_dm_wb':'w_wb_alu']:[])];return p}
+/* ===================== INTERFAZ ===================== */
+const $=id=>document.getElementById(id),esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
+const WIRES={w_pc_im:'M166,438H200',w_pc_add4:'M175,438V215H258',w_add4:'M330,262H420V218H843',w_pc_addb:'M175,438V372H548V262H683',w_pc_loop:'M875,263H925V160H100V438H128',w_im_out:'M315,505H328',w_rs1:'M328,505V428H365',w_rs2:'M328,505V482H365',w_rd:'M328,505V537H365',w_imm_in:'M328,505V706H468',w_rd1:'M558,455H665',w_rd2a:'M558,530H572',w_rd2m:'M572,530V535H610',w_wdata:'M572,530V627H808',w_imm_alu:'M548,706H585V580H610',w_imm_sh:'M548,706H585V352H603',w_sh_add:'M663,352H683',w_mux_alu:'M640,558H665',w_alu_dm:'M770,525H808',w_wb_alu:'M784,525V708H970V590H993',w_dm_wb:'M956,525H993',w_wb_reg:'M1023,552H1040V790H343V595H365',w_zero:'M770,485H795V424',w_pcsrc:'M860,408H905V185H860V205',w_sum:'M790,308H843'};
+const COMP=[['c_pc','r',128,380,38,118,'PC'],['c_im','r',200,415,115,165,'Memoria de|instrucciones'],['c_reg','r',365,400,193,220,'Banco de registros'],['c_dm','r',808,470,148,160,'Memoria|de datos'],['c_imm','e',508,706,40,72,'Imm Gen'],['c_sh','e',633,355,30,24,'Shift left 1'],['c_malu','e',625,560,15,45,'Mux'],['c_mwb','e',1008,552,15,48,'Mux'],['c_mpc','e',859,263,16,58,'Mux'],['c_br','r',740,392,120,32,'Lógica bifurcación*'],['c_add4','p','258,188 330,232 330,292 258,338',294,262,'Add'],['c_addb','p','683,235 790,280 790,335 683,385',736,308,'Add'],['c_alu','p','665,435 770,468 770,583 665,585',705,525,'ALU']];
+const TX=[[370,432,'Read register 1'],[370,486,'Read register 2'],[370,541,'Write register'],[370,598,'Write data'],[553,450,'Read data 1','end'],[553,524,'Read data 2','end'],[213,505,'Read address|Instruction'],[813,529,'Address'],[813,622,'Write data'],[951,520,'Read data','end'],[765,490,'Zero','end'],[765,520,'ALU result','end'],[240,314,'4'],[543,690,'32→64','end']];
+/* --- Dibujo SVG: la geometría de WIRES, COMP y TX es la original; aquí solo cambian clases y capas --- */
+let h='<defs><marker id="ar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0L7,3.5L0,7z" fill="context-stroke"/></marker></defs><g id="gw">';
+Object.entries(WIRES).forEach(([k,d])=>h+=`<path id="${k}" class="w" d="${d}" marker-end="url(#ar)"/>`);
+h+='</g>';
+/* Solo se mueven ETIQUETAS (no componentes ni cables) para que no se pisen con las de los puertos. */
+const LB={c_im:[null,438],c_dm:[null,566],c_alu:[705,562]},SM={c_sh:1,c_br:1,c_malu:1,c_mwb:1,c_mpc:1};
+COMP.forEach(c=>{const[id,s]=c;const o=LB[id]||[],lab=(x,y,t)=>{x=o[0]??x;y=o[1]??y;return`<text class="t${SM[id]?' sm':''}" x="${x}" y="${y}" text-anchor="middle">${t.split('|').map((u,k)=>`<tspan x="${x}" dy="${k?13:0}">${u}</tspan>`).join('')}</text>`};
+ if(s=='r')h+=`<rect id="${id}" class="c${id=='c_br'?' inf':''}" x="${c[2]}" y="${c[3]}" width="${c[4]}" height="${c[5]}" rx="4"/>`+lab(c[2]+c[4]/2,c[3]+c[5]/2+(id=='c_reg'?-40:id=='c_dm'?-30:id=='c_pc'?-4:id=='c_br'?4:-8),c[6]);
+ else if(s=='e')h+=`<ellipse id="${id}" class="c" cx="${c[2]}" cy="${c[3]}" rx="${c[4]}" ry="${c[5]}"/>`+lab(c[2],c[3]+4,c[6]);
+ else h+=`<polygon id="${id}" class="c" points="${c[2]}"/>`+lab(c[3],c[4],c[5])});
+TX.forEach(([x,y,t,a])=>h+=`<text class="pt" x="${x}" y="${y}" text-anchor="${a||'start'}">${t.split('|').map((u,k)=>`<tspan x="${x}" dy="${k?12:0}">${u}</tspan>`).join('')}</text>`);
+const DYN=[];
+[['PCSrc',700,198],['ALUSrc',575,506],['ALUop',735,426,'end'],['MemWrite',885,462],['MemRead',885,660],['MemtoReg',1000,498,'middle'],['RegWrite',400,640,'middle']].forEach(([n,x,y,a])=>{DYN.push('sg_'+n);h+=`<rect id="bg_sg_${n}" class="chip cs" rx="3" width="0" height="0"/><text id="sg_${n}" class="sg" x="${x}" y="${y}" text-anchor="${a||'start'}"></text>`});
+[['v_pc',100,515],['v_instr',205,598],['v_rd1',565,447],['v_rd2',580,645],['v_imm',597,698],['v_alu',690,606],['v_rdata',940,646],['v_wb',1028,542],['v_pcn',930,152],['sm_malu',640,621,'middle'],['sm_mwb',1008,618,'middle'],['sm_mpc',859,340,'middle']].forEach(([n,x,y,a])=>{DYN.push(n);const v=n[0]=='v';h+=`<rect id="bg_${n}" class="chip ${v?'cv':'cs'}" rx="3" width="0" height="0"/><text id="${n}" class="${v?'vv':'sg'}" x="${x}" y="${y}" text-anchor="${a||'start'}"></text>`});
+$('dpw').innerHTML=`<svg id="dp" viewBox="60 140 1073 670" role="img" aria-label="Datapath RISC-V monociclo">${h}</svg>`;
+const EXP={RegWrite:'Habilita escribir el dato en el banco de registros.',ALUSrc:'0: ALU usa rs2 · 1: ALU usa el inmediato.',MemRead:'Habilita la lectura de la memoria de datos.',MemWrite:'Habilita la escritura en la memoria de datos.',MemtoReg:'0: escribe el resultado de la ALU · 1: escribe el dato leído de memoria · X: no importa.',PCSrc:'0: PC←PC+4 · 1: PC←destino del salto (Zero/lógica de bifurcación).',ALUop:'Operación de la ALU (4 bits; * = código asignado por este simulador, no figura en la imagen).'};
+const EX={a:'addi x5, x0, 15\naddi x6, x0, 4\nadd x7, x5, x6\nsub x8, x5, x6\nand x9, x5, x6\nor x10, x5, x6\nxor x11, x5, x6\nslt x12, x6, x5',
+m:'addi x2, x0, 64     # base\naddi x5, x0, 123\nsd x5, 8(x2)\nld x6, 8(x2)\nadd x7, x6, x5',
+l:'addi x5, x0, 3\naddi x6, x0, 0\nloop: beq x5, x0, fin\n  addi x6, x6, 10\n  addi x5, x5, -1\n  beq x0, x0, loop\nfin: sd x6, 0(x0)',
+e:'addi x5, x6, 5000\nlww x3, 0(x2)\nadd x1, x2\nadd x32, x1, x2\nld x3, 3(x2)\nbeq x1, x2, nada\njal x1, loop'};
+let P=asm('',0),cur=init(),H=[],mode='idle',tmr=0,testOut=null;
+const cfgExt=()=>$('ext').checked;
+function reset(){clearTimeout(tmr);mode='idle';cur=init();H=[];$('dp').classList.remove('pz');testOut=null}
+function compile(){P=asm($('src').value,cfgExt());reset();render()}
+function once(){if(cur.err||cur.done||P.fatal)return false;const n=step(cur,P.prog);H.push(cur);cur=n;return true}
+function nextInstr(){let g=0;do{if(!once())break}while(cur.ph!=4&&!cur.err&&!cur.done&&++g<9)}
+function tick(){if(mode!='run')return;try{if(!once()||cur.err||cur.done){mode='idle';render();return}render();tmr=setTimeout(tick,1800/Number($('sp').value))}catch(e){clearTimeout(tmr);mode='idle';const box=$('con');if(box)box.innerHTML='<pre><b>Error interno del simulador</b>\n'+esc(e&&e.stack?e.stack:String(e))+'</pre>';console.error(e)}}
+function start(){try{if(P.fatal){render();return}if(cur.done||cur.err)reset();clearTimeout(tmr);mode='run';$('dp').classList.remove('pz');tick()}catch(e){mode='idle';$('con').innerHTML='<pre><b>Error interno del simulador</b>\n'+esc(e&&e.stack?e.stack:String(e))+'</pre>';console.error(e)}}
+let rf='d',showAll=false,popOff=false,lastKey=null,imOpen=false;
+const PH=['IF','ID','EX','MEM','WB'];
+$('bRun').onclick=start;
+$('bPause').onclick=()=>{if(mode=='run'){mode='pause';clearTimeout(tmr);$('dp').classList.add('pz')}render()};
+$('bResume').onclick=()=>{if(mode=='pause'){mode='run';$('dp').classList.remove('pz');tick()}};
+$('bStop').onclick=()=>{clearTimeout(tmr);mode='idle';$('dp').classList.remove('pz');render()};
+$('bReset').onclick=()=>{reset();render()};
+$('bNext').onclick=()=>{clearTimeout(tmr);mode='idle';once();render()};
+$('bInstr').onclick=()=>{clearTimeout(tmr);mode='idle';nextInstr();render()};
+$('bPrev').onclick=()=>{clearTimeout(tmr);mode='idle';if(H.length)cur=H.pop();render()};
+$('bFast').onclick=()=>{if(P.fatal){render();return}if(cur.done||cur.err)reset();clearTimeout(tmr);mode='idle';while(!cur.done&&!cur.err&&H.length<20000)nextInstr();render()};
+$('bTest').onclick=()=>{testOut=tests();setTab('con');render()};
+$('src').oninput=()=>{popOff=false;compile()};$('ext').onchange=compile;
+const syncScroll=()=>{const t=$('src');$('gut').scrollTop=$('hl').scrollTop=t.scrollTop;$('hl').scrollLeft=t.scrollLeft;showPop()};
+$('src').onscroll=syncScroll;
+$('src').addEventListener('keyup',e=>{if(e.key=='Escape'){popOff=true}else popOff=false;showPop()});
+$('src').addEventListener('click',()=>{popOff=false;showPop()});$('src').addEventListener('blur',()=>showPop());$('src').addEventListener('focus',()=>showPop());
+$('ex').onchange=e=>{if(e.target.value){$('src').value=EX[e.target.value];compile();e.target.value=''}};
+$('bRestore').onclick=()=>{$('src').value=EX.a;compile()};$('bClear').onclick=()=>{$('src').value='';compile()};
+/* detalle, formato de registros, pestañas, tema y velocidad: solo afectan a la presentación */
+const setLv=v=>{$('lv').value=v;$('lvD').setAttribute('aria-pressed',v=='d');$('lvV').setAttribute('aria-pressed',v=='v');render()};
+$('lvD').onclick=()=>setLv('d');$('lvV').onclick=()=>setLv('v');
+const setRf=v=>{rf=v;[['rfD','d'],['rfH','h'],['rfU','u']].forEach(([id,k])=>$(id).setAttribute('aria-pressed',k==v));render()};
+$('rfD').onclick=()=>setRf('d');$('rfH').onclick=()=>setRf('h');$('rfU').onclick=()=>setRf('u');
+$('rAll').onchange=e=>{showAll=e.target.checked;render()};
+function setTab(t){const c=t=='con';$('tCon').setAttribute('aria-selected',c);$('tHis').setAttribute('aria-selected',!c);$('con').hidden=!c;$('tr').hidden=c}
+$('tCon').onclick=()=>setTab('con');$('tHis').onclick=()=>{setTab('his');const b=$('tr');b.scrollTop=1e9};
+$('sp').oninput=()=>spv();
+function spv(){$('spv').textContent=(1.8/Number($('sp').value)).toFixed(1)+' s'}
+function effTheme(){const r=document.documentElement.getAttribute('data-theme');return r||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light')}
+$('bTheme').onclick=()=>{const n=effTheme()=='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',n);try{localStorage.setItem('riscv-theme',n)}catch(e){}};
+try{const t=localStorage.getItem('riscv-theme');if(t=='light'||t=='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}
+/* zoom y desplazamiento del datapath */
+function setZoom(v){const w=$('dpw'),f=1,cx=(w.scrollLeft+w.clientWidth/2)/Math.max(1,w.scrollWidth),cy=(w.scrollTop+w.clientHeight/2)/Math.max(1,w.scrollHeight);
+ v=Math.max(60,Math.min(220,Math.round(v)));$('zm').value=v;$('dp').style.width=v+'%';$('zv').textContent=v+'%';
+ w.scrollLeft=cx*w.scrollWidth-w.clientWidth/2;w.scrollTop=cy*w.scrollHeight-w.clientHeight/2}
+$('zm').oninput=e=>setZoom(Number(e.target.value));
+$('zIn').onclick=()=>setZoom(Number($('zm').value)+20);$('zOut').onclick=()=>setZoom(Number($('zm').value)-20);$('zFit').onclick=()=>{setZoom(100);$('dpw').scrollTo(0,0)};
+$('bFocus').onclick=()=>{const on=!document.body.classList.contains('fx');document.body.classList.toggle('fx',on);$('bFocus').setAttribute('aria-pressed',on);$('bFocus').textContent=on?'Mostrar paneles':'Ampliar'};
+$('dpw').addEventListener('wheel',e=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();setZoom(Number($('zm').value)*(e.deltaY<0?1.1:1/1.1))},{passive:false});
+let pan=null;const dw=$('dpw');
+dw.addEventListener('pointerdown',e=>{if(e.pointerType!='mouse'||e.button)return;pan={x:e.clientX,y:e.clientY,l:dw.scrollLeft,t:dw.scrollTop};dw.setPointerCapture(e.pointerId);dw.classList.add('pan')});
+dw.addEventListener('pointermove',e=>{if(!pan)return;dw.scrollLeft=pan.l-(e.clientX-pan.x);dw.scrollTop=pan.t-(e.clientY-pan.y)});
+['pointerup','pointercancel'].forEach(k=>dw.addEventListener(k,()=>{pan=null;dw.classList.remove('pan')}));
+$('mem').addEventListener('toggle',e=>{if(e.target.matches&&e.target.matches('details.im'))imOpen=e.target.open},true);
+/* ir a una línea desde la consola */
+$('con').addEventListener('click',e=>{const b=e.target.closest('[data-l]');if(!b)return;const l=Number(b.dataset.l),t=$('src'),ls=t.value.split('\n');let a=0;for(let k=0;k<l-1;k++)a+=ls[k].length+1;t.focus();t.setSelectionRange(a,a+(ls[l-1]||'').length);t.scrollTop=Math.max(0,(l-4)*20);syncScroll()});
+/* ---------- utilidades de presentación ---------- */
+const fv=(v,f=rf)=>f=='h'?hx(v):f=='u'?String(U(v)):String(v);
+const dwv=(m,a)=>{let v=0n;for(let k=0;k<8;k++)v|=B(m[a+k])<<B(8*k);return v};
+function fitChips(){DYN.forEach(id=>{const t=$(id),r=$('bg_'+id);if(!t.textContent){r.setAttribute('width',0);r.setAttribute('height',0);return}const b=t.getBBox();r.setAttribute('x',b.x-4);r.setAttribute('y',b.y-1);r.setAttribute('width',b.width+8);r.setAttribute('height',b.height+2)})}
+function stateInfo(){if(P.fatal)return['err','Errores en el programa ('+P.errs.filter(e=>e.k!='Advertencia').length+')'];
+ if(cur.err)return['err','Error de ejecución'];if(cur.done)return['done','Finalizado · '+cur.st.n+' instrucciones'];
+ if(mode=='run')return['run','Ejecutando · '+PH[cur.info?cur.ph:0]];if(mode=='pause')return['pause','En pausa · '+PH[cur.info?cur.ph:0]];
+ return['idle',cur.info?'Detenido · '+PH[cur.ph]:'Listo']}
+function ctrls(){const f=P.fatal,e=!!cur.err,d=!!cur.done,m=mode,none=!P.prog.length,blk=f||e||d||none,D=(id,v)=>{$(id).disabled=!!v};
+ D('bRun',f||none);D('bPause',m!='run');D('bResume',m!='pause');D('bPrev',!H.length);D('bNext',blk);D('bInstr',blk);D('bStop',m=='idle');
+ D('bReset',!(H.length||cur.info||cur.err||cur.done||m!='idle'));D('bFast',f||none);
+ $('bRun').setAttribute('aria-pressed',m=='run');$('bResume').classList.toggle('hot',m=='pause')}
+let popLine=0;
+function popLineNow(){const t=$('src');if(document.activeElement===t&&!popOff){const l=t.value.slice(0,t.selectionStart).split('\n').length;if(P.errs.some(e=>e.l==l)||(cur.err&&cur.err.l==l))return l;return 0}
+ return cur.err&&cur.err.l&&!popOff?cur.err.l:0}
+function showPop(){const pop=$('pop'),l=popLineNow();if(!l){pop.hidden=true;return}
+ const ds=P.errs.filter(e=>e.l==l).concat(cur.err&&cur.err.l==l?[cur.err]:[]);
+ pop.className=ds.every(e=>e.k=='Advertencia')?'w':'';
+ pop.innerHTML=ds.map(e=>`<div><b>${esc(e.k)}.</b> ${esc(e.m)}${e.tip?` <span class="tp">${esc(e.tip)}</span>`:''}</div>`).join('');
+ pop.hidden=false;const t=$('src'),H0=$('ed').clientHeight;let top=8+l*20-t.scrollTop+4;if(top+pop.offsetHeight>H0-4)top=8+(l-1)*20-t.scrollTop-pop.offsetHeight-4;pop.style.top=Math.max(2,top)+'px'}
+const hlRow=(k,s)=>{const ds=P.errs.filter(e=>e.l==k&&e.n&&e.c!=null);if(!ds.length)return esc(s)||'&nbsp;';const m=Array(s.length).fill(0);
+ ds.forEach(e=>{const w=e.k=='Advertencia'?1:2;for(let q=e.c;q<Math.min(s.length,e.c+e.n);q++)m[q]=Math.max(m[q],w)});
+ let o='',q=0;while(q<s.length){let r=q;while(r<s.length&&m[r]==m[q])r++;const t=esc(s.slice(q,r));o+=m[q]?`<u class="${m[q]==2?'ue':'uw'}">${t}</u>`:t;q=r}return o||'&nbsp;'};
+function render(){const i=cur.info,ph=cur.ph,det=$('lv').value=='d',pre=(i&&ph==4&&H.length)?H[H.length-1].st:cur.st,post=i?i.after:null;
+ const [sk,stx]=stateInfo();document.body.dataset.st=sk;$('stTxt').textContent=stx;ctrls();spv();
+ /* editor */
+ const L=$('src').value.split('\n'),n=L.length,cl=i?i.i.l:0,rl=(cur.err&&cur.err.l)||0,
+  cls=k=>P.errs.some(e=>e.l==k&&e.k!='Advertencia')||k==rl?'el':P.errs.some(e=>e.l==k)?'wl':k==cl?'cl':'',
+  mk=k=>P.errs.some(e=>e.l==k&&e.k!='Advertencia')||k==rl?'✕':P.errs.some(e=>e.l==k)?'!':k==cl?'▶':'';
+ $('gut').innerHTML=Array.from({length:n},(_,k)=>`<div class="${cls(k+1)}"><b>${mk(k+1)}</b>${k+1}</div>`).join('');
+ $('hl').innerHTML=Array.from({length:n},(_,k)=>`<div class="${cls(k+1)}">${hlRow(k+1,L[k])}</div>`).join('');
+ $('gut').scrollTop=$('hl').scrollTop=$('src').scrollTop;$('hl').scrollLeft=$('src').scrollLeft;showPop();
+ /* datapath */
+ const dp=$('dp'),key=i?[i,ph]:null,changed=!lastKey||!key||lastKey[0]!==key[0]||lastKey[1]!==key[1];
+ dp.classList.toggle('nv',!det);
+ if(changed){dp.querySelectorAll('.w,.c').forEach(e=>{e.setAttribute('class',(e.classList.contains('w')?'w':'c')+(e.id=='c_br'?' inf':''))})}
+ const set=(id,t)=>{$(id).textContent=t};dp.querySelectorAll('text.sg,text.vv').forEach(e=>e.textContent='');
+ if(i){if(changed){const pp=paths(i);for(let p=0;p<=ph;p++)pp[p].forEach(id=>{const e=$(id);if(e)e.classList.add(p==ph?'cur':'act')});
+   const gw=$('gw');gw.querySelectorAll('.w.act').forEach(e=>gw.appendChild(e));gw.querySelectorAll('.w.cur').forEach(e=>gw.appendChild(e))}
+  const c=i.ctl,sh=n=>{const s=String(n);return s.length>13?s.slice(0,12)+'…':s};
+  if(ph>=1){['RegWrite','ALUSrc','MemRead','MemWrite','MemtoReg','ALUop'].forEach(k=>set('sg_'+k,k+'='+c[k]));set('sm_malu','sel='+c.ALUSrc+(c.ALUSrc?' (imm)':' (rs2)'))}
+  if(ph>=2){set('sg_PCSrc','PCSrc='+c.PCSrc);set('sm_mpc','sel='+c.PCSrc)}
+  if(ph>=4&&c.RegWrite)set('sm_mwb','sel='+c.MemtoReg+(c.MemtoReg?' (mem)':' (ALU)'));
+  set('v_pc','PC='+hx(i.pc,4));if(ph>=1){set('v_instr',i.i.txt);set('v_rd1','rs1='+sh(i.a));if(i.reads.length>1)set('v_rd2','rs2='+sh(i.b));if(i.hasI)set('v_imm','imm='+i.imm)}
+  if(ph>=2)set('v_alu','ALU='+sh(i.res)+' Z='+ +i.zero);if(ph>=3&&c.MemRead)set('v_rdata','mem='+sh(i.mv));if(ph>=4){if(c.RegWrite)set('v_wb','wb='+sh(i.wb));set('v_pcn','PC←'+hx(i.next,4))}}
+ else if(changed){dp.querySelectorAll('.w,.c').forEach(e=>{e.setAttribute('class',(e.classList.contains('w')?'w':'c')+(e.id=='c_br'?' inf':''))})}
+ lastKey=key;fitChips();
+ /* etapas e instrucción en curso */
+ $('ph').querySelectorAll('li').forEach((li,k)=>{li.className=!i?'':k<ph?'dn':k==ph?'on':'';if(i&&k==ph)li.setAttribute('aria-current','step');else li.removeAttribute('aria-current')});
+ $('ir').innerHTML=i?`<span class="k">PC</span><span class="m">${hx(i.pc,4)}</span><span class="k">línea ${i.i.l}</span><code>${esc(i.i.txt)}</code><span class="k">${cur.st.n} ejecutadas</span>`:`<span class="k">Sin instrucción en curso · ${P.prog.length} instrucciones cargadas</span>`;
+ $('stage').innerHTML=i?`<div class="cu"><b>Etapa ${ph+1}/5 · ${PH[ph]}</b> ${esc(i.d[ph])}</div><div class="hint">Pasos pedagógicos de un único ciclo de reloj real.</div>`+(det&&ph>0?'<div class="pv">'+i.d.slice(0,ph).map(x=>'<div>'+esc(x)+'</div>').join('')+'</div>':''):'<div class="hint">Pulsa «Ejecutar» o «Paso siguiente». Datapath monociclo: toda la instrucción ocurre en un ciclo de reloj.</div>';
+ /* señales de control */
+ $('sig').className=det?'':'nd';
+ $('sig').innerHTML='<tr><th>Señal</th><th>Valor</th><th>Función</th></tr>'+Object.keys(EXP).map(k=>{const v=i&&ph>=1?i.ctl[k]:null,vc=v===null?'na':v===1?'v1':v===0?'v0':'vx';return`<tr><td>${k}</td><td><span class="vb ${vc}">${v===null?'—':v}</span></td><td class="fn">${EXP[k]}</td></tr>`}).join('');
+ /* esta instrucción */
+ const P0='<dd class="p">pendiente</dd>',Ar='<span class="o">',R=n=>'x'+n;
+ let cg='';
+ if(!i)cg='<dt>Estado</dt><dd class="p">Ninguna instrucción en curso.</dd>';
+ else{const m=i.ctl.MemWrite?'escribe':'lee';
+  cg+=`<dt>Instrucción</dt><dd>${esc(i.i.txt)}</dd>`;
+  cg+=`<dt>Lee</dt>`+(ph>=1?`<dd>${i.reads.map(q=>R(q)+'='+fv(pre.r[q])).join(', ')}${i.hasI?', imm='+i.imm:''}</dd>`:P0);
+  cg+=`<dt>ALU</dt>`+(ph>=2?`<dd>${i.o.a}(${fv(i.a)}, ${fv(i.bb)}) = <span class="a">${fv(i.res)}</span> · Z=${+i.zero}${i.t=='B'?' · '+(i.taken?'salta':'no salta'):''}</dd>`:P0);
+  cg+=`<dt>Memoria</dt>`+(ph>=3?(i.ma!=null?`<dd>${m} ${i.sz} B en ${hx(i.ma,4)}: ${i.ctl.MemWrite?Ar+fv(dwv(pre.m,i.ma-i.ma%8))+'</span> → <span class="a">'+fv(dwv(post.m,i.ma-i.ma%8))+'</span>':'<span class="a">'+fv(i.mv)+'</span>'}</dd>`:'<dd class="p">sin acceso</dd>'):P0);
+  cg+=`<dt>Escribe</dt>`+(ph>=4?(i.rw&&i.i.rd?`<dd>${R(i.i.rd)}: ${Ar}${fv(pre.r[i.i.rd])}</span> → <span class="a">${fv(post.r[i.i.rd])}</span></dd>`:`<dd class="p">${i.rw?'x0 no cambia':'ningún registro'}</dd>`):P0);
+  cg+=`<dt>PC</dt>`+(ph>=4?`<dd>${Ar}${hx(i.pc,4)}</span> → <span class="a">${hx(i.next,4)}</span>${i.taken?' (salto)':''}</dd>`:P0)}
+ $('chg').innerHTML=cg;
+ /* registros */
+ const rd=i&&ph>=1&&ph<4?i.reads:[],wr=i&&ph==4&&i.rw&&i.i.rd?i.i.rd:-1;let shown=0;
+ const rows=cur.st.r.map((v,k)=>{const isR=rd.includes(k),isW=k==wr;if(!showAll&&k!=0&&v==0n&&!isR&&!isW)return'';shown++;
+  const cell=isW?`<b>${fv(post.r[k])}</b><small>antes ${fv(pre.r[k])}</small>`:fv(v);
+  return`<tr class="${isW?'w':isR?'r':v==0n?'z':''}"><td class="rn">x${k}<span>${ABI[k]}</span></td><td class="m">${cell}</td><td class="tg">${isW?'escribe':isR?'lee':''}</td></tr>`}).join('');
+ $('reg').innerHTML='<tr><th>Registro</th><th>'+(rf=='h'?'Hex':rf=='u'?'Sin signo':'Con signo')+'</th><th></th></tr>'+rows;
+ $('rCnt').textContent='· '+shown+' de 32';
+ /* memoria */
+ const acc=i&&i.ma!=null&&ph>=3?i.ma-i.ma%8:-1;let mr='';
+ for(let a=0;a<MEM;a+=8){const v=dwv(cur.st.m,a),isA=a==acc;if(!v&&!isA)continue;const wrt=isA&&i.ctl.MemWrite,b4=wrt?dwv(pre.m,a):v,af=wrt?dwv(post.m,a):v;
+  mr+=`<tr class="${isA?(wrt?'w':'r'):''}"><td class="m">${hx(a,4)}</td><td class="m">${wrt?'<b>'+hx(af)+'</b><small>antes '+hx(b4)+'</small>':hx(v)}</td><td class="m">${wrt?'<b>'+W(af)+'</b><small>antes '+W(b4)+'</small>':W(v)}</td><td class="tg">${isA?(wrt?'escribe':'lee'):''}</td></tr>`}
+ $('mem').innerHTML=(i&&i.ma!=null&&ph>=3?`<div class="mi"><b>${i.ctl.MemWrite?'Escritura':'Lectura'}</b> · dirección efectiva <span class="m">${hx(i.ma,4)}</span> · ${i.sz} B · valor <span class="m">${i.mv}</span> · ${i.ctl.MemWrite?'fuente x'+i.i.rs2:'destino x'+i.i.rd}</div>`:'')
+  +`<table><tr><th>Dirección</th><th>Palabra de 64 bits</th><th>Decimal</th><th></th></tr>${mr||'<tr><td colspan="4" class="empty">Toda la memoria de datos es 0 (1 KiB).</td></tr>'}</table>`
+  +`<details class="im"${imOpen?' open':''}><summary>Memoria de instrucciones (${P.prog.length})</summary><table><tr><th>Dirección</th><th colspan="3">Instrucción</th></tr>${P.prog.map((x,k)=>`<tr class="${i&&i.i==x?'cur':''}"><td class="m">${hx(k*4,4)}</td><td class="m" colspan="3">${esc(x.txt)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">Sin instrucciones válidas.</td></tr>'}</table></details>`;
+ /* consola: error, causa, sugerencia y estado */
+ const fe=e=>{const w=e.k=='Advertencia';return`<div class="dg ${w?'w':''}"><div class="t1"><span class="k">${w?'Advertencia':'Error'}</span><span>${esc(e.k)}</span>${e.l?`<button type="button" class="lk" data-l="${e.l}" title="Ir a la línea ${e.l}">línea ${e.l}</button>`:''}</div>`
+  +(e.s?`<pre>${esc(e.s)}${e.n?'\n'+' '.repeat(e.c)+'<span class="cr">'+'^'.repeat(e.n)+'</span>':''}</pre>`:'')
+  +`<dl><dt>Motivo</dt><dd>${esc(e.m)}</dd>${e.tip?`<dt>Sugerencia</dt><dd class="tip">${esc(e.tip)}</dd>`:''}<dt>Estado</dt><dd>${w?'instrucción válida.':e.k=='Error de ejecución'?'ejecución detenida; estado conservado (PC, registros y memoria sin cambios parciales).':'instrucción rechazada.'}</dd></dl></div>`};
+ const ne=P.errs.filter(e=>e.k!='Advertencia').length+(cur.err?1:0),nw=P.errs.length-P.errs.filter(e=>e.k!='Advertencia').length;
+ $('nCon').hidden=!(ne+nw);$('nCon').textContent=ne+nw;$('nCon').className='bdg'+(ne?'':' w');
+ $('con').innerHTML=P.errs.map(fe).join('')+(cur.err?fe(cur.err):'')+(P.fatal?'<div class="dg"><div class="t1"><span class="k">No se puede ejecutar</span></div><dl><dt>Motivo</dt><dd>No se puede ejecutar mientras haya errores.</dd></dl></div>':'')+(cur.done?'<div class="dg o"><div class="t1"><span>Programa finalizado ('+cur.st.n+' instrucciones).</span></div></div>':'')+(testOut?'<div class="dg o">'+testOut.replace('<pre class="o">','<pre class="tests">').replace('<pre class="">','<pre class="tests">')+'</div>':'')
+  ||'<div class="empty">Sin errores ni avisos. Los mensajes aparecen aquí y junto a la línea afectada.</div>';
+ /* historial */
+ const all=[...H,cur].filter(c=>c.info&&c.ph==4),seen=new Set(),hr=[];all.forEach(c=>{if(!seen.has(c.info)){seen.add(c.info);hr.push(c)}});
+ const hs=hr.slice(-150);$('nHis').hidden=!hr.length;$('nHis').textContent=hr.length;
+ $('tr').innerHTML=hs.map((c,k)=>{const x=c.info,q=x.after.n,res=x.rw&&x.i.rd?'x'+x.i.rd+' = '+x.wb:x.t=='B'?(x.taken?'salto tomado':'no tomado'):x.t=='S'?'mem '+hx(x.ma,4)+' ← '+x.mv:'';
+  return`<div class="hi${k==hs.length-1?' last':''}"><span class="n">#${q}</span> <span class="n">${hx(x.pc,4)}</span> <span class="ins">${esc(x.i.txt)}</span>${res?' <span class="r">→ '+esc(res)+'</span>':''}${det?'<div class="dt">'+esc(x.d[2])+'<br>'+esc(x.d[3])+' · '+esc(x.d[4])+'</div>':''}</div>`}).join('')||'<div class="empty">Aún no se completó ninguna instrucción.</div>';
+ if(!$('tr').hidden)$('tr').scrollTop=1e9}
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{try{render()}catch(e){}});
+/* ===================== PRUEBAS AUTOMÁTICAS DEL MOTOR ===================== */
+function tests(){const out=[],T=(n,f)=>{let ok=false;try{ok=!!f()}catch(e){}out.push([n,ok])};
+ const run=(s,e)=>{const p=asm(s,e);let c=init();if(p.fatal)return{p,c};for(let k=0;k<999&&!c.done&&!c.err;k++)c=step(c,p.prog);while(!c.done&&!c.err)c=step(c,p.prog);return{p,c}};
+ const R=(s,x,e)=>run(s,e).c.st.r[x],ser=c=>JSON.stringify([c.st.r.map(String),[...c.st.m],c.st.pc]),A=s=>asm(s,1);
+ const pre='addi x5,x0,15\naddi x6,x0,4\n';
+ T('add',()=>R(pre+'add x7,x5,x6',7)==19n);T('sub negativo',()=>R(pre+'sub x7,x6,x5',7)==-11n);T('and/or/xor',()=>R(pre+'and x7,x5,x6\nor x8,x5,x6\nxor x9,x5,x6',7)==4n&&R(pre+'or x8,x5,x6',8)==15n&&R(pre+'xor x9,x5,x6',9)==11n);
+ T('slt / slti',()=>R(pre+'slt x7,x6,x5',7)==1n&&R(pre+'slti x7,x5,3',7)==0n);T('andi/ori/xori',()=>R('addi x5,x0,12\nandi x6,x5,10',6)==8n&&R('addi x5,x0,12\nori x6,x5,3',6)==15n);
+ T('desplazamientos (ext)',()=>R('addi x5,x0,-8\nslli x6,x5,2\nsrai x7,x5,1\nsrli x8,x5,60',6,1)==-32n&&R('addi x5,x0,-8\nsrai x7,x5,1',7,1)==-4n&&R('addi x5,x0,-8\nsrli x8,x5,60',8,1)==15n);
+ T('shift sin ext → no soportada',()=>asm('slli x1,x1,2',0).errs[0].k=='Instrucción no soportada');
+ T('x0 inmutable',()=>R('addi x0,x0,5\nadd x0,x0,x0',0)==0n&&asm('addi x0,x1,5',0).errs[0].k=='Advertencia');
+ T('ld/sd ida y vuelta',()=>R('addi x2,x0,64\naddi x5,x0,-77\nsd x5,8(x2)\nld x6,8(x2)',6)==-77n);T('sw/lw signo (ext)',()=>R('addi x5,x0,-1\nsw x5,4(x0)\nlw x6,4(x0)',6,1)==-1n);
+ T('beq tomado',()=>R('addi x5,x0,1\nbeq x5,x5,f\naddi x6,x0,9\nf: addi x7,x0,2',6)==0n);T('beq no tomado',()=>R('addi x5,x0,1\nbeq x5,x0,f\naddi x6,x0,9\nf: addi x7,x0,2',6)==9n);
+ T('bne/blt/bge (ext)',()=>R('addi x5,x0,1\nblt x0,x5,f\naddi x6,x0,9\nf: addi x7,x0,2',6,1)==0n);
+ T('bucle suma',()=>R(EX.l,6)==30n&&run(EX.l).c.st.m[0]==30);
+ T('inmediato 2047 ok / 2048 error / -2048 ok',()=>!asm('addi x1,x0,2047').fatal&&asm('addi x1,x0,2048').fatal&&!asm('addi x1,x0,-2048').fatal);
+ T('registro inválido x32',()=>asm('add x32,x1,x2').errs[0].k=='Error semántico');T('mnemónico desconocido + sugerencia',()=>/lw/.test(asm('lww x3,0(x2)').errs[0].tip));
+ T('operandos incorrectos',()=>/Cantidad/.test(asm('add x1,x2').errs[0].m));T('etiqueta inexistente',()=>/Etiqueta/.test(asm('beq x1,x2,nada').errs[0].m));
+ T('jal no soportada',()=>asm('jal x1,f\nf: addi x1,x1,0').errs[0].k=='Instrucción no soportada');
+ T('ld desalineado → error sin cambios',()=>{const c=run('addi x2,x0,3\nld x3,0(x2)').c;return c.err&&c.st.r[3]==0n&&c.st.pc==4});T('ld fuera de memoria',()=>run('addi x2,x0,2000\nld x3,0(x2)').c.err.k=='Error de ejecución');
+ T('reinicio sin residuos',()=>{const a=ser(run(EX.m).c);return ser(init())==ser(init())&&a!=ser(init())});
+ T('avance y retroceso determinista',()=>{const p=asm(EX.m,0).prog,h=[];let c=init();const s0=ser(c);for(let k=0;k<12;k++){h.push(c);c=step(c,p)}const s1=ser(c);while(h.length>6)c=h.pop();const m=ser(c);while(h.length)c=h.pop();let d=init();for(let k=0;k<6;k++)d=step(d,p);return ser(c)==s0&&m==ser(d)&&s1!=s0});
+ T('coherencia visual: add (sin memoria, escribe reg)',()=>{const x=run(pre+'add x7,x5,x6').c,i=exec({r:x.st.r,m:x.st.m,pc:8,n:0},{mn:'add',t:'R',rd:7,rs1:5,rs2:6,txt:'add'}),p=paths(i).flat();return p.includes('w_wb_reg')&&!p.includes('c_dm')&&i.ctl.MemWrite==0});
+ T('coherencia visual: sd (escribe mem, no reg)',()=>{const i=exec(init().st,{mn:'sd',t:'S',rs1:0,rs2:0,imm:8,txt:'sd'}),p=paths(i).flat();return p.includes('w_wdata')&&!p.includes('w_wb_reg')&&i.ctl.MemWrite==1&&i.ctl.RegWrite==0});
+ T('coherencia visual: beq elige w_sum o w_add4',()=>{const a=exec(init().st,{mn:'beq',t:'B',rs1:0,rs2:0,imm:8,txt:'b'}),b=exec(init().st,{mn:'beq',t:'B',rs1:0,rs2:1,imm:8,txt:'b'});b.after.r[1]=0n;return paths(a)[4].includes('w_sum')&&a.after.pc==8&&a.ctl.PCSrc==1&&paths(init().info?{}:exec({...init().st,r:Object.assign(Array(32).fill(0n),{1:5n})},{mn:'beq',t:'B',rs1:0,rs2:1,imm:8,txt:'b'}))[4].includes('w_add4')});
+ const f=out.filter(o=>!o[1]).length;
+ return`<pre class="${f?'':'o'}"><b>Pruebas del motor: ${out.length-f}/${out.length} correctas</b>\n`+out.map(o=>(o[1]?'✔ ':'✘ ')+o[0]).join('\n')+'\n(Pausa/reanudación y animación: verificar manualmente en la interfaz.)</pre>'}
+$('src').value=EX.a;compile();
+</script></body></html>
